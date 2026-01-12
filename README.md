@@ -60,7 +60,7 @@ The agent maintains a history of findings, allowing it to distinguish between:
 
 ```bash
 # Add the Helm repository
-helm repo add trix https://davealtena.github.io/trix
+helm repo add trix https://trixsec-dev.github.io/trix
 helm repo update
 
 # Install the agent
