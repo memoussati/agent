@@ -1,0 +1,46 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+    - go fmt ./...
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    binary: trix-agent
+
+dockers:
+  - image_templates:
+      - "ghcr.io/trixsec-dev/trix-agent:{{ .Tag }}"
+      - "ghcr.io/trixsec-dev/trix-agent:latest"
+    dockerfile: Dockerfile
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch
+
+release:
+  github:
+    owner: trixsec-dev
+    name: trix-agent
+  draft: false
+  prerelease: auto
