@@ -90,7 +90,8 @@ func LoadConfig() (*Config, error) {
 	return cfg, nil
 }
 
-// HasSaasEndpoint returns true if SaaS endpoint is configured.
+// HasSaasEndpoint returns true if SaaS endpoint is fully configured
+// (both endpoint URL and API key are present).
 func (c *Config) HasSaasEndpoint() bool {
-	return c.SaasEndpoint != ""
+	return c.SaasEndpoint != "" && c.SaasApiKey != ""
 }
