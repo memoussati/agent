@@ -17,8 +17,8 @@ type ScanJob struct {
 	TargetKind      string    `json:"target_kind,omitempty"`
 	TargetNamespace string    `json:"target_namespace,omitempty"`
 	TargetName      string    `json:"target_name,omitempty"`
-	Status          string    `json:"status"`           // Running, Succeeded, Failed
-	FailureReason   string    `json:"failure_reason"`   // OOMKilled, BackoffLimitExceeded, etc.
+	Status          string    `json:"status"`         // Running, Succeeded, Failed
+	FailureReason   string    `json:"failure_reason"` // OOMKilled, BackoffLimitExceeded, etc.
 	FailedAt        time.Time `json:"failed_at"`
 }
 

@@ -1,14 +1,13 @@
 package agent
 
 import (
-	"os"
 	"testing"
 	"time"
 )
 
-// clearEnvVars removes all TRIX_ environment variables to ensure clean test state.
-func clearEnvVars(t *testing.T) {
-	t.Helper()
+func TestLoadConfig_Defaults(t *testing.T) {
+	// Use t.Setenv with empty values to ensure clean state
+	// t.Setenv automatically restores original values after test
 	envVars := []string{
 		"TRIX_DATABASE_PATH",
 		"TRIX_POLL_INTERVAL",
@@ -21,12 +20,8 @@ func clearEnvVars(t *testing.T) {
 		"TRIX_HEALTH_ADDR",
 	}
 	for _, v := range envVars {
-		os.Unsetenv(v)
+		t.Setenv(v, "")
 	}
-}
-
-func TestLoadConfig_Defaults(t *testing.T) {
-	clearEnvVars(t)
 
 	cfg, err := LoadConfig()
 	if err != nil {
@@ -59,19 +54,16 @@ func TestLoadConfig_Defaults(t *testing.T) {
 }
 
 func TestLoadConfig_WithEnvVars(t *testing.T) {
-	clearEnvVars(t)
-	defer clearEnvVars(t)
-
-	// Set all environment variables
-	os.Setenv("TRIX_DATABASE_PATH", "/custom/path/trix.db")
-	os.Setenv("TRIX_POLL_INTERVAL", "10m")
-	os.Setenv("TRIX_NAMESPACES", "default, kube-system, monitoring")
-	os.Setenv("TRIX_CLUSTER_NAME", "production-cluster")
-	os.Setenv("TRIX_SAAS_ENDPOINT", "https://app.trixsec.dev")
-	os.Setenv("TRIX_SAAS_API_KEY", "secret-api-key")
-	os.Setenv("TRIX_LOG_FORMAT", "text")
-	os.Setenv("TRIX_LOG_LEVEL", "debug")
-	os.Setenv("TRIX_HEALTH_ADDR", ":9090")
+	// t.Setenv automatically cleans up after test
+	t.Setenv("TRIX_DATABASE_PATH", "/custom/path/trix.db")
+	t.Setenv("TRIX_POLL_INTERVAL", "10m")
+	t.Setenv("TRIX_NAMESPACES", "default, kube-system, monitoring")
+	t.Setenv("TRIX_CLUSTER_NAME", "production-cluster")
+	t.Setenv("TRIX_SAAS_ENDPOINT", "https://app.trixsec.dev")
+	t.Setenv("TRIX_SAAS_API_KEY", "secret-api-key")
+	t.Setenv("TRIX_LOG_FORMAT", "text")
+	t.Setenv("TRIX_LOG_LEVEL", "debug")
+	t.Setenv("TRIX_HEALTH_ADDR", ":9090")
 
 	cfg, err := LoadConfig()
 	if err != nil {
@@ -116,9 +108,6 @@ func TestLoadConfig_WithEnvVars(t *testing.T) {
 }
 
 func TestLoadConfig_InvalidPollInterval(t *testing.T) {
-	clearEnvVars(t)
-	defer clearEnvVars(t)
-
 	tests := []struct {
 		name  string
 		value string
@@ -131,8 +120,7 @@ func TestLoadConfig_InvalidPollInterval(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			clearEnvVars(t)
-			os.Setenv("TRIX_POLL_INTERVAL", tt.value)
+			t.Setenv("TRIX_POLL_INTERVAL", tt.value)
 
 			_, err := LoadConfig()
 			if err == nil {
