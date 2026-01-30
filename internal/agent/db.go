@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"time"
@@ -72,9 +71,8 @@ func NewDB(ctx context.Context, dbPath string) (*DB, error) {
 		"PRAGMA temp_store=MEMORY",
 	}
 	for _, pragma := range pragmas {
-		if _, err := conn.ExecContext(ctx, pragma); err != nil {
-			log.Printf("pragma warning: %s: %v", pragma, err)
-		}
+		// Pragmas are optimizations, not critical - ignore errors
+		_, _ = conn.ExecContext(ctx, pragma)
 	}
 
 	db := &DB{conn: conn}

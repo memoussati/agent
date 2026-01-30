@@ -10,7 +10,7 @@ import (
 )
 
 // Version is set at build time via ldflags
-var Version = "0.1.0"
+var Version = "0.2.0"
 
 func main() {
 	if err := run(); err != nil {

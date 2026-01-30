@@ -16,12 +16,6 @@ type FindingType string
 
 const (
 	FindingTypeVulnerability FindingType = "vulnerability"
-	FindingTypeCompliance    FindingType = "compliance"
-	FindingTypeRBAC          FindingType = "rbac"
-	FindingTypeSecret        FindingType = "secret"
-	FindingTypeInfra         FindingType = "infra"
-	FindingTypeBenchmark     FindingType = "benchmark"
-	FindingTypeEvent         FindingType = "event"
 )
 
 type Finding struct {
@@ -84,87 +78,5 @@ func VulnerabilityToFinding(v Vulnerability, namespace, resourceKind, resourceNa
 		Remediation:     fmt.Sprintf("Update %s to version %s", v.PkgName, v.FixedVersion),
 		Source:          "trivy",
 		RawData:         v,
-	}
-}
-
-// ComplianceCheckToFinding converts a Trivy compliance check to a Finding
-func ComplianceCheckToFinding(c ComplianceCheck, namespace, resourceName string) Finding {
-	return Finding{
-		ID:           c.CheckID,
-		Type:         FindingTypeCompliance,
-		Severity:     Severity(c.Severity),
-		Namespace:    namespace,
-		ResourceKind: "Pod",
-		ResourceName: resourceName,
-		Title:        c.Title,
-		Description:  c.Description,
-		Remediation:  c.Remediation,
-		Source:       "trivy",
-		RawData:      c,
-	}
-}
-
-// InfraCheckToFinding converts an infra assessment check to a Finding
-func InfraCheckToFinding(c ComplianceCheck, namespace, resourceName string) Finding {
-	return Finding{
-		ID:           c.CheckID,
-		Type:         FindingTypeInfra,
-		Severity:     Severity(c.Severity),
-		Namespace:    namespace,
-		ResourceKind: "Pod",
-		ResourceName: resourceName,
-		Title:        c.Title,
-		Description:  c.Description,
-		Remediation:  c.Remediation,
-		Source:       "trivy",
-		RawData:      c,
-	}
-}
-
-// RbacCheckToFinding converts an RBAC assessment check to a Finding
-func RbacCheckToFinding(c ComplianceCheck, namespace, resourceName string) Finding {
-	return Finding{
-		ID:           c.CheckID,
-		Type:         FindingTypeRBAC,
-		Severity:     Severity(c.Severity),
-		Namespace:    namespace,
-		ResourceKind: "Role",
-		ResourceName: resourceName,
-		Title:        c.Title,
-		Description:  c.Description,
-		Remediation:  c.Remediation,
-		Source:       "trivy",
-		RawData:      c,
-	}
-}
-
-// ExposedSecretToFinding converts an exposed secret to a Finding
-func ExposedSecretToFinding(s ExposedSecret, namespace, resourceName string) Finding {
-	return Finding{
-		ID:           s.RuleID,
-		Type:         FindingTypeSecret,
-		Severity:     Severity(s.Severity),
-		Namespace:    namespace,
-		ResourceKind: "Pod",
-		ResourceName: resourceName,
-		Title:        s.Title,
-		Description:  fmt.Sprintf("Secret found in %s", s.Target),
-		Source:       "trivy",
-		RawData:      s,
-	}
-}
-
-// BenchmarkControlToFinding converts a CIS/NSA benchmark control to a Finding
-func BenchmarkControlToFinding(c BenchmarkControl, benchmarkName string) Finding {
-	return Finding{
-		ID:           c.ID,
-		Type:         FindingTypeBenchmark,
-		Severity:     Severity(c.Severity),
-		ResourceKind: "Cluster",
-		ResourceName: benchmarkName,
-		Title:        c.Name,
-		Description:  fmt.Sprintf("CIS control %s failed %d times", c.ID, c.TotalFail),
-		Source:       "trivy",
-		RawData:      c,
 	}
 }

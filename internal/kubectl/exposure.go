@@ -3,6 +3,7 @@ package kubectl
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -27,6 +28,9 @@ type WorkloadExposure struct {
 	// Ingress exposure
 	Ingresses []IngressExposure `json:"ingresses,omitempty"`
 
+	// Gateway API exposure
+	GatewayRoutes []GatewayRouteExposure `json:"gateway_routes,omitempty"`
+
 	// Network policy analysis
 	HasNetworkPolicy     bool     `json:"has_network_policy"`
 	IngressPolicyMode    string   `json:"ingress_policy_mode"` // "allow-all", "default-deny", "restricted"
@@ -35,6 +39,15 @@ type WorkloadExposure struct {
 
 	// Computed score (0.0 - 1.0, higher = more exposed)
 	ExposureScore float64 `json:"exposure_score"`
+}
+
+// GatewayRouteExposure represents a Gateway API route exposing a workload
+type GatewayRouteExposure struct {
+	Kind        string   `json:"kind"` // HTTPRoute, GRPCRoute, TCPRoute, TLSRoute
+	Name        string   `json:"name"`
+	GatewayName string   `json:"gateway_name"`
+	Hostnames   []string `json:"hostnames,omitempty"`
+	External    bool     `json:"external"` // true if gateway is internet-facing
 }
 
 // ServiceExposure represents a service targeting a workload
@@ -111,6 +124,11 @@ func (c *Client) AnalyzeWorkloadExposure(ctx context.Context, workload Workload)
 	if err == nil {
 		exposure.Ingresses = c.findIngressesForWorkload(ingresses, exposure.Services)
 	}
+
+	// Analyze Gateway API routes targeting services of this workload
+	gateways, _ := c.ListGateways(ctx)
+	gatewayRoutes, _ := c.ListAllGatewayRoutes(ctx)
+	exposure.GatewayRoutes = c.findGatewayRoutesForWorkload(gatewayRoutes, gateways, exposure.Services, workload.Namespace)
 
 	// Analyze network policies affecting this workload
 	policies, err := c.listNetworkPoliciesRaw(ctx, workload.Namespace)
@@ -226,6 +244,59 @@ func (c *Client) findServicesForWorkload(services []corev1.Service, workloadLabe
 	return result
 }
 
+// findGatewayRoutesForWorkload finds Gateway API routes that target services of this workload
+func (c *Client) findGatewayRoutesForWorkload(routes []GatewayRoute, gateways []Gateway, workloadServices []ServiceExposure, workloadNS string) []GatewayRouteExposure {
+	var result []GatewayRouteExposure
+
+	// Build map of gateways for quick lookup
+	gatewayMap := make(map[string]Gateway)
+	for _, gw := range gateways {
+		key := fmt.Sprintf("%s/%s", gw.Namespace, gw.Name)
+		gatewayMap[key] = gw
+	}
+
+	// Build set of service names for quick lookup
+	svcRefs := make(map[string]bool)
+	for _, svc := range workloadServices {
+		// Routes reference services as "namespace/name"
+		svcRefs[fmt.Sprintf("%s/%s", workloadNS, svc.Name)] = true
+	}
+
+	if len(svcRefs) == 0 {
+		return result
+	}
+
+	for _, route := range routes {
+		// Check if route references any of our services
+		referencesWorkload := false
+		for _, backendRef := range route.BackendRefs {
+			if svcRefs[backendRef] {
+				referencesWorkload = true
+				break
+			}
+		}
+
+		if !referencesWorkload {
+			continue
+		}
+
+		// Check if the gateway is external
+		gwKey := fmt.Sprintf("%s/%s", route.GatewayNS, route.GatewayName)
+		gw, exists := gatewayMap[gwKey]
+		external := exists && gw.External
+
+		result = append(result, GatewayRouteExposure{
+			Kind:        route.Kind,
+			Name:        route.Name,
+			GatewayName: route.GatewayName,
+			Hostnames:   route.Hostnames,
+			External:    external,
+		})
+	}
+
+	return result
+}
+
 // findIngressesForWorkload finds ingresses that route to services of this workload
 func (c *Client) findIngressesForWorkload(ingresses []networkingv1.Ingress, workloadServices []ServiceExposure) []IngressExposure {
 	var result []IngressExposure
@@ -254,10 +325,10 @@ func (c *Client) findIngressesForWorkload(ingresses []networkingv1.Ingress, work
 			for _, path := range rule.HTTP.Paths {
 				if path.Backend.Service != nil && svcNames[path.Backend.Service.Name] {
 					referencesWorkload = true
-					if rule.Host != "" && !contains(hosts, rule.Host) {
+					if rule.Host != "" && !slices.Contains(hosts, rule.Host) {
 						hosts = append(hosts, rule.Host)
 					}
-					if path.Path != "" && !contains(paths, path.Path) {
+					if path.Path != "" && !slices.Contains(paths, path.Path) {
 						paths = append(paths, path.Path)
 					}
 				}
@@ -394,10 +465,18 @@ func (c *Client) analyzeNetworkPolicies(exposure *WorkloadExposure, policies []n
 
 // classifyExposure determines the exposure level based on analysis
 func classifyExposure(exposure *WorkloadExposure) string {
-	// Level 1: Internet-facing (Ingress or LoadBalancer/NodePort)
+	// Level 1: Internet-facing (Ingress, Gateway API route to external gateway, or LoadBalancer/NodePort)
 	if len(exposure.Ingresses) > 0 {
 		return "internet"
 	}
+
+	// Check Gateway API routes - if any route points to an external gateway
+	for _, route := range exposure.GatewayRoutes {
+		if route.External {
+			return "internet"
+		}
+	}
+
 	for _, svc := range exposure.Services {
 		if svc.Type == "LoadBalancer" || svc.Type == "NodePort" {
 			return "internet"
@@ -471,16 +550,6 @@ func calculateExposureScore(exposure *WorkloadExposure) float64 {
 	}
 }
 
-// contains checks if a string slice contains a value
-func contains(slice []string, val string) bool {
-	for _, s := range slice {
-		if s == val {
-			return true
-		}
-	}
-	return false
-}
-
 // GetExposedPorts extracts all exposed ports from services
 func (e *WorkloadExposure) GetExposedPorts() []int32 {
 	portSet := make(map[int32]bool)
@@ -542,6 +611,14 @@ func (e *WorkloadExposure) HasExternalAccess() bool {
 	if len(e.Ingresses) > 0 {
 		return true
 	}
+
+	// Check Gateway API routes to external gateways
+	for _, route := range e.GatewayRoutes {
+		if route.External {
+			return true
+		}
+	}
+
 	for _, svc := range e.Services {
 		if svc.Type == "LoadBalancer" || svc.Type == "NodePort" {
 			return true

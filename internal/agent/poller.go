@@ -402,7 +402,14 @@ func (p *Poller) PollWorkloads(ctx context.Context) ([]kubectl.Workload, error) 
 	// Get scanned workload set from VulnerabilityReports
 	scannedSet := p.getScannedWorkloadSet(ctx)
 
-	// Correlate workloads with scan status
+	// Get namespaces with network policies for hardening status
+	nsWithPolicy, err := k8sClient.GetNamespacesWithNetworkPolicy(ctx)
+	if err != nil {
+		p.logger.Warn("failed to get network policies", "error", err)
+		nsWithPolicy = make(map[string]bool)
+	}
+
+	// Correlate workloads with scan status and network policy
 	for i := range allWorkloads {
 		key := fmt.Sprintf("%s/%s/%s", allWorkloads[i].Namespace, allWorkloads[i].Kind, allWorkloads[i].Name)
 		if scannedSet[key] {
@@ -410,6 +417,9 @@ func (p *Poller) PollWorkloads(ctx context.Context) ([]kubectl.Workload, error) 
 		} else {
 			allWorkloads[i].ScanStatus = "pending"
 		}
+
+		// Set network policy status based on namespace
+		allWorkloads[i].HasNetworkPolicy = nsWithPolicy[allWorkloads[i].Namespace]
 	}
 
 	scannedCount := 0
