@@ -12,7 +12,7 @@ import (
 
 // ClusterInfo contains detected cluster provider and platform information.
 type ClusterInfo struct {
-	Provider         string   `json:"provider"`           // eks, aks, gke, kapsule, openshift, k3s, k3d, rke, kubeadm, talos, k0s, kind, minikube, microk8s, orbstack, docker-desktop, unknown
+	Provider         string   `json:"provider"`           // eks, aks, gke, kapsule, openshift, k3s, k3d, rke, rke2, kubeadm, talos, k0s, kind, minikube, microk8s, orbstack, docker-desktop, unknown
 	ControlPlaneType string   `json:"control_plane_type"` // managed, self-hosted
 	KubeVersion      string   `json:"kube_version"`       // v1.29.1
 	Platform         string   `json:"platform"`           // aws, azure, gcp, hetzner, digitalocean, linode, equinix, openstack, vsphere, scaleway, local, on-prem, unknown
@@ -53,6 +53,11 @@ func (c *Client) DetectClusterInfo(ctx context.Context) (*ClusterInfo, error) {
 	// Detect from kube-system pods if provider still unknown
 	if info.Provider == "unknown" {
 		_ = c.detectFromSystemPods(ctx, info)
+	}
+
+	// Detect OpenShift via API group if provider still unknown
+	if info.Provider == "unknown" {
+		c.detectOpenShiftAPI(info)
 	}
 
 	// Detect real kubeadm via ConfigMap if provider still unknown
@@ -129,7 +134,22 @@ func (c *Client) detectFromNodeLabels(nodes []corev1.Node, info *ClusterInfo) {
 			return
 		}
 
-		// Rancher RKE detection
+		// Rancher RKE2 detection (check before RKE1 — RKE2 nodes may also
+		// carry cattle.io labels, but the plan.cattle.io label is RKE2-specific)
+		if _, ok := labels["rke2.io/managed"]; ok {
+			info.Provider = "rke2"
+			info.ControlPlaneType = "self-hosted"
+			info.DetectedBy = append(info.DetectedBy, "node-label:rke2.io/managed")
+			return
+		}
+		if _, ok := labels["plan.cattle.io/machine"]; ok {
+			info.Provider = "rke2"
+			info.ControlPlaneType = "self-hosted"
+			info.DetectedBy = append(info.DetectedBy, "node-label:plan.cattle.io/machine")
+			return
+		}
+
+		// Rancher RKE1 detection
 		if _, ok := labels["rke.cattle.io/machine"]; ok {
 			info.Provider = "rke"
 			info.ControlPlaneType = "self-hosted"
@@ -201,6 +221,9 @@ func (c *Client) detectPlatformFromProviderID(nodes []corev1.Node, info *Cluster
 		case strings.HasPrefix(providerID, "vsphere://"):
 			info.Platform = "vsphere"
 			info.DetectedBy = append(info.DetectedBy, "node-providerid:vsphere")
+		case strings.HasPrefix(providerID, "scaleway://"):
+			info.Platform = "scaleway"
+			info.DetectedBy = append(info.DetectedBy, "node-providerid:scaleway")
 		case strings.HasPrefix(providerID, "kind://"):
 			info.Platform = "local"
 			info.DetectedBy = append(info.DetectedBy, "node-providerid:kind")
@@ -231,6 +254,14 @@ func (c *Client) detectFromNodeInfo(nodes []corev1.Node, info *ClusterInfo) {
 			info.Provider = "k0s"
 			info.ControlPlaneType = "self-hosted"
 			info.DetectedBy = append(info.DetectedBy, "node-kubelet:k0s")
+			return
+		}
+
+		// RKE2 detection via KubeletVersion
+		if strings.Contains(nodeInfo.KubeletVersion, "+rke2") {
+			info.Provider = "rke2"
+			info.ControlPlaneType = "self-hosted"
+			info.DetectedBy = append(info.DetectedBy, "node-kubelet:rke2")
 			return
 		}
 
@@ -317,6 +348,24 @@ func (c *Client) detectFromSystemPods(ctx context.Context, info *ClusterInfo) er
 	}
 
 	return nil
+}
+
+// detectOpenShiftAPI checks for the config.openshift.io API group which is
+// present on all OpenShift clusters, even when node labels are not accessible.
+func (c *Client) detectOpenShiftAPI(info *ClusterInfo) {
+	_, resources, err := c.clientset.Discovery().ServerGroupsAndResources()
+	if err != nil {
+		return
+	}
+
+	for _, resourceList := range resources {
+		if strings.HasPrefix(resourceList.GroupVersion, "config.openshift.io/") {
+			info.Provider = "openshift"
+			info.ControlPlaneType = "self-hosted"
+			info.DetectedBy = append(info.DetectedBy, "api-group:config.openshift.io")
+			return
+		}
+	}
 }
 
 // detectKubeadm checks for the kubeadm-config ConfigMap which is only
